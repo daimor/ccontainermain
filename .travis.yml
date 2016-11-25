@@ -1,7 +1,13 @@
 language: go
-
-install: 
-  - make get-deps
-
-script: 
-  - make
+install:
+- make get-deps
+script:
+- make
+deploy:
+  provider: releases
+  skip_cleanup: true
+  file: distrib/linux/ccontainermain
+  on:
+    tags: true
+  api_key:
+    secure: 2GJd031oqoJPdLF73sNgvzIqmRWvtRpKA6sKz5f6D+FdzpII8bY/dAGfXxuPvD1ZI/nPymraUQig4AY/or8VVFIJlOshuUJKQFv28jUygn6qPfGLlIaJZNxvPn0ydih2xlE5wkdMWvZTqYRDP7Az0LmzGLnVFYRx/qms4eAn6U6fr97H0T7dxAPeKAkntFMdR0ncT2BLlWlNVIOqj5JHYactKf1gZRH/UcY3nHY/QHRkQbyVQjCKoRdbmzJv1YdtdjOPtUoqIHOirnY9J9MxDhJvz5jKt1YevbJMs/QO8tZK0bUlnMCtkByDb8aa4gweTeyhWxVZywlO3gzgZrOswD+jQoPJyJdQYNlm+Ht8SpVu3GIl+Do2h4ifnBzwDWkdzEc77DIuoYe3wZUCXe8IHv1WkGD6IWr5mWToSCeJ91aEiKJvgJqFALP59gxpz73kOP6JI/guek4qvTcy9Tpj1pJznNKwCZXEoZP5UX0ttQJqDhjd1l29yHTEKHS4Y1dxFTdeXIHOJ92apXqIc6BRHKfsJzR/VP97bgb3IHBD5aERsJL6WvYW+dh3oacvUmKJtUlQyAR3kKZivBIsqEr1W5kuGHGbrEA0X9G5mzmNxKozHQPOjGIdQkNpK1ypkBzKZMiBrv5LbBrtE4agyr0TqCfaaiTysrlI2DNhT1k9iKc=
