@@ -472,12 +472,19 @@ func stopExtraService(xstop string) (bool, error) {
 	return true, nil
 }
 
+func getInstance(def string) string {
+	if instance := os.Getenv("ISC_PACKAGE_INSTANCENAME"); instance != "" {
+		return instance
+	}
+	return def
+}
+
 // Caché container main
 //
 func main() {
 
 	// flag handling
-	pFinst := flag.String("i", "CACHE", "The Cachè instance name to start/stop")
+	pFinst := flag.String("i", getInstance("CACHE"), "The Cachè instance name to start/stop")
 	pFnmsp := flag.String("n", "", "The Caché application Namespace")
 	pFrou := flag.String("r", "", "The Caché Routine name to start the app")
 	pFstop := flag.Bool("cstop", true, "Allows container to avoid (false) Caché shutdown in case of throw-away containers")
