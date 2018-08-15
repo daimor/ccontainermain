@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
 	"runtime"
 	"strconv"
 	"strings"
@@ -26,11 +27,18 @@ import (
 )
 
 const (
-	version         = "0.6"
+	version         = "0.7"
 	dbg             = false
 	k316            = 3.16 // the kernel version that allows containers to use more useful ssmmmax seg value
 	pre316MaxShmall = 8192
 )
+
+func getControlCmd(iris bool) string {
+	if iris {
+		return "iris"
+	}
+	return "ccontrol"
+}
 
 // setting shmmax
 // because the linux default in kernel =<v3.16 is only 32MB and
@@ -84,9 +92,9 @@ func setSharedMemSeg(shmmaxVal int) (bool, error) {
 }
 
 // returns instalation folder for given instance
-func getInstanceFolder(inst string) string {
+func getInstanceFolder(inst string, iris bool) string {
 	var folder string
-	cmd := "ccontrol"
+	cmd := getControlCmd(iris)
 	args := []string{"qlist", inst}
 
 	// Output runs the command and returns its standard output
@@ -102,7 +110,7 @@ func getInstanceFolder(inst string) string {
 		// C151^/usr/cachesys^2015.1.0.429.0^down, last used Mon Jun  8 16:40:07 2015^cache.cpf^1972^57772^62972^^
 		qlistStr := string(out)
 		if qlistStr == "" {
-			log.Printf("Error: Cannot continue as qlistStr from 'ccontrol qlist <instance>' is empty")
+			log.Printf("Error: Cannot continue as qlistStr from '%s qlist <instance>' is empty", cmd)
 			os.Exit(1)
 		}
 
@@ -114,10 +122,14 @@ func getInstanceFolder(inst string) string {
 }
 
 // shows all new lines in cconsole.log
-func tailCConsoleLog(inst string) {
-	folder := getInstanceFolder(inst)
+func tailCConsoleLog(inst string, iris bool) {
+	folder := getInstanceFolder(inst, iris)
 	endLocation := tail.SeekInfo{Offset: 0, Whence: os.SEEK_END}
-	if t, err := tail.TailFile(folder+"/mgr/cconsole.log", tail.Config{Follow: true, Location: &endLocation}); err != nil {
+	logFile := path.Join(folder, "mgr/cconsole.log")
+	if iris {
+		logFile = path.Join(folder, "mgr/messages.log")
+	}
+	if t, err := tail.TailFile(logFile, tail.Config{Follow: true, Location: &endLocation}); err != nil {
 		log.Printf("Error while getting content for cconsole.log\n")
 		log.Printf("ERR: %s.\n", err)
 	} else {
@@ -127,13 +139,13 @@ func tailCConsoleLog(inst string) {
 	}
 }
 
-// starting Caché
+// starting
 //
-func startCaché(inst string, nostu bool, cclog bool, fail bool) (bool, error) {
-	log.Printf("Starting Caché...\n")
+func start(inst string, nostu bool, cclog bool, fail bool, iris bool) (bool, error) {
+	log.Printf("Starting ...\n")
 
 	// building the start string
-	cmd := "ccontrol"
+	cmd := getControlCmd(iris)
 	args := []string{"start"}
 	args = append(args, inst)
 	if nostu == true {
@@ -142,11 +154,11 @@ func startCaché(inst string, nostu bool, cclog bool, fail bool) (bool, error) {
 	args = append(args, "quietly")
 
 	if dbg {
-		log.Printf("Caché start cmd: %s %q", cmd, args)
+		log.Printf("Start cmd: %s %q", cmd, args)
 	}
 
 	if cclog {
-		go tailCConsoleLog(inst)
+		go tailCConsoleLog(inst, iris)
 	}
 
 	c := exec.Command(cmd, args...)
@@ -159,16 +171,16 @@ func startCaché(inst string, nostu bool, cclog bool, fail bool) (bool, error) {
 	if err := c.Run(); err != nil {
 		errMsg := out.String()
 		log.Printf("Error & possible causes:\n")
-		log.Printf("-Caché was not installed successfully")
-		log.Printf("-wrong Caché instance name")
-		log.Printf("-missing privileges to start/stop Caché; proc not in Caché group.")
+		log.Printf("-server was not installed successfully")
+		log.Printf("-wrong instance name")
+		log.Printf("-missing privileges to start/stop server; proc not in correct group.")
 		log.Printf("ERR: %s; %s", err, errMsg)
 		os.Exit(1)
 	}
 
 	// check that the start-up was successful
-	if err := checkCmdOutcome("up", inst, fail); err != nil {
-		log.Printf("Error: Caché was not brought up successfully.\n")
+	if err := checkCmdOutcome("up", inst, fail, iris); err != nil {
+		log.Printf("Error: server was not brought up successfully.\n")
 		os.Exit(1)
 	}
 
@@ -180,13 +192,13 @@ func startCaché(inst string, nostu bool, cclog bool, fail bool) (bool, error) {
 //		"up" checks for successful Caché start-up
 // 		"down" checks for successful Caché shutdown
 //
-func checkCmdOutcome(what string, inst string, fail bool) error {
-	cmd := "ccontrol"
+func checkCmdOutcome(what string, inst string, fail bool, iris bool) error {
+	cmd := getControlCmd(iris)
 	args := []string{"qlist", inst}
 
 	// Output runs the command and returns its standard output
 	if out, err := exec.Command(cmd, args...).Output(); err != nil {
-		log.Printf("Error while verifying Caché '%s' status\n", what)
+		log.Printf("Error while verifying server '%s' status\n", what)
 		log.Printf("ERR: %s.", err)
 		os.Exit(1)
 
@@ -197,7 +209,7 @@ func checkCmdOutcome(what string, inst string, fail bool) error {
 		// C151^/usr/cachesys^2015.1.0.429.0^down, last used Mon Jun  8 16:40:07 2015^cache.cpf^1972^57772^62972^^
 		qlistStr := string(out)
 		if qlistStr == "" {
-			log.Printf("Error: Cannot continue as qlistStr from 'ccontrol qlist <instance>' is empty")
+			log.Printf("Error: Cannot continue as qlistStr from '%s qlist <instance>' is empty", cmd)
 			os.Exit(1)
 		}
 
@@ -209,10 +221,10 @@ func checkCmdOutcome(what string, inst string, fail bool) error {
 		cstatus := CachéStatus[0]
 
 		if cstatus == "running" {
-			log.Printf("Caché started successfully\n")
+			log.Printf("Started successfully\n")
 
 		} else if cstatus == "down" {
-			log.Printf("Caché stopped successfully\n")
+			log.Printf("Stopped successfully\n")
 
 		} else if cstatus == "sign-on inhibited" {
 			log.Printf("Something is preventing Caché from starting in multi-user mode,\n")
@@ -232,10 +244,10 @@ func checkCmdOutcome(what string, inst string, fail bool) error {
 
 // starting Caché app by calling a routine or class method
 //
-func startApp(inst string, nmsp string, rou string) (bool, error) {
+func startApp(inst string, nmsp string, rou string, iris bool) (bool, error) {
 	log.Printf("Starting app '%s' in '%s'...\n", rou, nmsp)
 
-	cmd := "ccontrol"
+	cmd := getControlCmd(iris)
 	args := []string{"session", inst, "-U", nmsp, rou}
 	c := exec.Command(cmd, args...)
 
@@ -259,23 +271,23 @@ func startApp(inst string, nmsp string, rou string) (bool, error) {
 
 // Stopping Caché
 //
-func shutdownCaché(inst string) (bool, error) {
-	log.Printf("Shutting down Caché...\n")
+func shutdown(inst string, iris bool) (bool, error) {
+	log.Printf("Shutting down...\n")
 
-	cmd := "ccontrol"
+	cmd := getControlCmd(iris)
 	args := []string{"stop", inst, "quietly"}
 
 	if err := exec.Command(cmd, args...).Run(); err != nil {
 		log.Printf("Error & possible causes:\n")
-		log.Printf("-wrong Caché instance name")
-		log.Printf("-Caché up in single user mode (there was trouble @startup)")
+		log.Printf("-wrong instance name")
+		log.Printf("-server up in single user mode (there was trouble @startup)")
 		log.Printf("ERR: %s", err)
 		os.Exit(1)
 	}
 
 	// check that the shutdown was successful
-	if err := checkCmdOutcome("down", inst, false); err != nil {
-		log.Printf("Error: Caché was not shutdown successfully.\n")
+	if err := checkCmdOutcome("down", inst, false, iris); err != nil {
+		log.Printf("Error: Server was not shutdown successfully.\n")
 		os.Exit(1)
 	}
 
@@ -488,14 +500,15 @@ func main() {
 
 	// flag handling
 	pFinst := flag.String("i", getInstance("CACHE"), "The Cachè instance name to start/stop")
-	pFnmsp := flag.String("n", "", "The Caché application Namespace")
-	pFrou := flag.String("r", "", "The Caché Routine name to start the app")
-	pFstop := flag.Bool("cstop", true, "Allows container to avoid (false) Caché shutdown in case of throw-away containers")
-	pFstart := flag.Bool("cstart", true, "Allows container to come up without (false) starting Caché or initialising shmem")
+	pFnmsp := flag.String("n", "", "The application Namespace")
+	pFrou := flag.String("r", "", "The Routine name to start the app")
+	pFstop := flag.Bool("cstop", true, "Allows container to avoid (false) server shutdown in case of throw-away containers")
+	pFstart := flag.Bool("cstart", true, "Allows container to come up without (false) starting server or initialising shmem")
 	pFnostu := flag.Bool("nostu", false, "Allows cstart to run with the nostu option for maintenance, single user access mode.")
 	pFshmem := flag.Int("shmem", 512, "Shared Mem segment max size in MB; default value=512MB enough to install and play")
 	pFlog := flag.Bool("cconsole", false, "Allows to show cconsole.log in current output.")
-	pFail := flag.Bool("fail-if-troubled", false, "Container will fail if Caché does not start correctly")
+	pFail := flag.Bool("fail-if-troubled", false, "Container will fail if server does not start correctly")
+	pIRIS := flag.Bool("iris", false, "If has to be used with IRIS")
 
 	// user option to start other services he might need (sshd, whatever...)
 	pFexePreStart := flag.String("xprestart", "", "Allows startup eXecution of other services or processes via a single <myStart_shell_script.sh>, called before Caché starts")
@@ -515,6 +528,7 @@ func main() {
 	shmem := *pFshmem
 	cclog := *pFlog
 	fail := *pFail
+	iris := *pIRIS
 	exePreStart := *pFexePreStart
 	exeStart := *pFexeStart
 	exeStop := *pFexeStop
@@ -564,7 +578,7 @@ func main() {
 	}
 
 	// 1--
-	// starting up Caché services_______________________________________
+	// starting up services_______________________________________
 	//
 	if cstart == true {
 
@@ -577,19 +591,19 @@ func main() {
 		}
 
 		// 1.2--
-		// starting Caché
-		_, err := startCaché(inst, nostu, cclog, fail)
+		// starting
+		_, err := start(inst, nostu, cclog, fail, iris)
 		if err != nil {
-			log.Printf("\nError starting up Caché: %s\n", err)
+			log.Printf("\nError starting up server: %s\n", err)
 			os.Exit(1)
 		} else {
-			log.Printf("Caché is up.\n")
+			log.Printf("Server is up.\n")
 		}
 
 		// 1.3--
-		// starting Caché app if we were told to
+		// starting app if we were told to
 		if rou != "" && nmsp != "" {
-			_, err = startApp(inst, nmsp, rou)
+			_, err = startApp(inst, nmsp, rou, iris)
 			if err != nil {
 				log.Printf("\nError starting up the app %s in namespace %s; Err: %s\n", rou, nmsp, err)
 				os.Exit(1)
@@ -640,15 +654,15 @@ func main() {
 	// if SIG*... received then run shutdown
 
 	// 4--
-	// Bring Caché down cleanly
+	// Bring down cleanly
 	//
 	if cstop == true {
-		_, err := shutdownCaché(inst)
+		_, err := shutdown(inst, iris)
 		if err != nil {
-			log.Printf("\nError shutting down Caché: %s\n", err)
+			log.Printf("\nError shutting down server: %s\n", err)
 			os.Exit(1)
 		} else {
-			log.Printf("Caché is down.\n")
+			log.Printf("server is down.\n")
 		}
 	}
 
