@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	version         = "0.7"
+	version         = "0.7.1"
 	dbg             = false
 	k316            = 3.16 // the kernel version that allows containers to use more useful ssmmmax seg value
 	pre316MaxShmall = 8192
@@ -129,6 +129,7 @@ func tailCConsoleLog(inst string, iris bool) {
 	if iris {
 		logFile = path.Join(folder, "mgr/messages.log")
 	}
+	exec.Command("touch", logFile).Run()
 	if t, err := tail.TailFile(logFile, tail.Config{Follow: true, Location: &endLocation}); err != nil {
 		log.Printf("Error while getting content for cconsole.log\n")
 		log.Printf("ERR: %s.\n", err)
